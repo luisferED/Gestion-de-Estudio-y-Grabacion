@@ -1,8 +1,8 @@
+import {getSession} from "../../../lib/auth-session";
 import {keycloakConfig,keycloakDiscovery,keycloakPublicOrigin,sha256Base64Url} from "../../../lib/keycloak";
 import {env} from "cloudflare:workers";
 import {clearAuthCookies,sessionCookie,sessionTokens} from "../../../lib/auth-cookies";
 
-type AppUser={id:number;email:string;name:string;program:string;role:string;active:number};
 const noStore={"Cache-Control":"no-store, max-age=0",Pragma:"no-cache"};
 export async function GET(request:Request){
   try{
@@ -10,12 +10,8 @@ export async function GET(request:Request){
     const hostname=new URL(request.url).hostname,localHost=["localhost","127.0.0.1","::1"].includes(hostname);
     if(runtime.DEPLOYMENT_MODE!=="production"&&runtime.LOCAL_AUTH_BYPASS==="true"&&localHost)
       return Response.json({authenticated:true,localBypass:true,user:{id:0,email:"admin.local@eldeber",name:"Administrador local",program:"Operaciones",role:"administrador",active:true}},{headers:noStore});
-    const tokens=sessionTokens(request);
-    for(const token of tokens){
-      const row=await env.DB.prepare("SELECT u.id,u.email,u.name,u.program,u.role,u.active FROM auth_sessions s JOIN users u ON lower(u.email)=lower(s.user_email) WHERE s.token=? AND s.expires_at>? AND u.active=1")
-        .bind("sha256:"+await sha256Base64Url(token),new Date().toISOString()).first<AppUser>();
-      if(row)return Response.json({authenticated:true,user:{...row,active:Boolean(row.active)}},{headers:noStore});
-    }
+    const row=await getSession(env.DB,request);
+    if(row)return Response.json({authenticated:true,user:row},{headers:noStore});
     return Response.json({authenticated:false},{status:401,headers:{...noStore,"Set-Cookie":sessionCookie(keycloakPublicOrigin(request),"",0)}});
   }catch{return Response.json({error:"No se pudo validar la sesion."},{status:503,headers:noStore})}
 }

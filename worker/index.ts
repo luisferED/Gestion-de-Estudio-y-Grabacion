@@ -1,5 +1,6 @@
 import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,verifyRequestOrigin} from "../tools/request-origin.mjs";
-import {sha256Base64Url} from "../lib/keycloak";
+import {getSession} from "../lib/auth-session";
+import {setIdentityName} from "../lib/request-identity";
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import handler from "vinext/server/app-router-entry";
 import {APP_BASE_PATH} from "../lib/app-path";
@@ -72,8 +73,7 @@ const worker = {
     const publicAuth=["/api/auth","/api/auth/keycloak/login","/api/auth/keycloak/callback"];
     if((appPath.startsWith("/api/")&&!publicAuth.includes(appPath)) || appPath==="/admin" || appPath.startsWith("/admin/")){
       try{
-        const token=(request.headers.get("Cookie")||"").split(";").map(value=>value.trim()).find(value=>value.startsWith("ed_session_v2="))?.slice(14)||"";
-        const session=token?await env.DB.prepare("SELECT u.email,u.name,u.role FROM auth_sessions s JOIN users u ON lower(u.email)=lower(s.user_email) WHERE s.token=? AND s.expires_at>? AND u.active=1").bind("sha256:"+await sha256Base64Url(token),new Date().toISOString()).first<{email:string;name:string;role:string}>():null;
+        const session=await getSession(env.DB,request);
         if(!session)return Response.json({error:"Debe iniciar sesión con su cuenta corporativa."},{status:401});
         const mutating=!["GET","HEAD","OPTIONS"].includes(request.method);
         const pathMatches=(path:string)=>appPath===path||appPath.startsWith(path+"/");
@@ -99,10 +99,10 @@ const worker = {
         if(producerRole&&appPath==="/api/reservations"&&!["GET","HEAD","OPTIONS","POST","PATCH","DELETE"].includes(request.method))return Response.json({error:"El rol Productor puede solicitar, aprobar, reprogramar, anular o cancelar reservas."},{status:403});
         if(session.role==="editor"&&appPath==="/api/reservations"&&!["GET","HEAD","OPTIONS","PATCH"].includes(request.method))return Response.json({error:"El rol Editor solo puede consultar y designar personal de edición."},{status:403});
         if(session.role==="visor"&&mutating)return Response.json({error:"El rol Visor solo puede consultar la agenda."},{status:403});
-        const headers=new Headers(request.headers);headers.set("x-ed-user-email",session.email);headers.set("x-ed-user-role",session.role);headers.set("x-ed-user-name",session.name);
+        const headers=new Headers(request.headers);headers.set("x-ed-user-email",session.email);headers.set("x-ed-user-role",session.role);setIdentityName(headers,session.name);
         request=new Request(request,{headers});
       }catch{
-        return Response.json({error:"Debe iniciar sesión con su cuenta corporativa."},{status:401});
+        return Response.json({error:"No se pudo validar la sesión. Intente nuevamente."},{status:503,headers:{"Cache-Control":"no-store"}});
       }
     }
 

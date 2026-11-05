@@ -1,8 +1,9 @@
+import {isActiveUser} from "../../../../../lib/auth-session";
 import {env} from "cloudflare:workers";
-import {clearOidcCookies,clearAuthCookies,sessionCookie} from "../../../../../lib/auth-cookies";
+import {clearOidcCookies,clearLegacyAuthCookies,sessionCookie} from "../../../../../lib/auth-cookies";
 import {keycloakConfig,keycloakDiscovery,keycloakPublicOrigin,keycloakUserInfo,randomBase64Url,verifyIdToken,sha256Base64Url} from "../../../../../lib/keycloak";
 
-type LocalUser={id:number;email:string;name:string;program:string;role:string;active:number};
+type LocalUser={id:number;email:string;name:string;program:string;role:string;active:number|string|boolean};
 const cookie=(request:Request,name:string)=>{const raw=(request.headers.get("Cookie")||"").split(";").map(value=>value.trim()).find(value=>value.startsWith(`${name}=`))?.slice(name.length+1)||"";try{return decodeURIComponent(raw)}catch{return ""}};
 const errorRedirect=(request:Request,message:string)=>{const headers=new Headers({Location:`${keycloakPublicOrigin(request)}?auth_error=${encodeURIComponent(message)}`,"Cache-Control":"no-store"});clearOidcCookies(headers,keycloakPublicOrigin(request));return new Response(null,{status:302,headers})};
 
@@ -30,12 +31,12 @@ export async function GET(request:Request){
       await env.DB.prepare("INSERT OR IGNORE INTO users (email,name,program,role,active) VALUES (?,?,?,?,1)").bind(email,profileName||email,"PRODUCCIÓN","produccion").run();
       user=await env.DB.prepare("SELECT id,email,name,program,role,active FROM users WHERE lower(email)=?").bind(email).first<LocalUser>();
     }
-    if(!user||!user.active)throw new Error(`La cuenta ${email} está validada, pero fue desactivada en la plataforma. Comuníquese con Operaciones.`);
+    if(!user||!isActiveUser(user.active))throw new Error(`La cuenta ${email} está validada, pero fue desactivada en la plataforma. Comuníquese con Operaciones.`);
     const token=randomBase64Url(48),maxAge=12*60*60,expiresAt=new Date(Date.now()+maxAge*1000).toISOString();
     await env.DB.prepare("INSERT INTO auth_sessions (token,user_email,expires_at,id_token_hint,end_session_endpoint) VALUES (?,?,?,?,?)").bind("sha256:"+await sha256Base64Url(token),user.email,expiresAt,tokens.id_token,discovery.end_session_endpoint||"").run();
     const destination=["administrador","jefe_operaciones"].includes(user.role)?"/admin":"/";
     const headers=new Headers({Location:`${config.publicOrigin}${destination}?auth_success=1`,"Cache-Control":"no-store"});
-    clearAuthCookies(headers,config.publicOrigin);
+    clearLegacyAuthCookies(headers,config.publicOrigin);
     headers.append("Set-Cookie",sessionCookie(config.publicOrigin,token,maxAge));
     return new Response(null,{status:302,headers});
   }catch(error){

@@ -1,3 +1,4 @@
+import {requestIdentityName} from "../../../../lib/request-identity";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { auditLogs, reservations } from "../../../../db/schema";
@@ -11,7 +12,7 @@ export async function DELETE(request:Request){
     const db=getDb();
     const [record]=await db.select().from(reservations).where(eq(reservations.id,payload.id)).limit(1);
     if(!record)return Response.json({error:"La solicitud ya no existe."},{status:404});
-    await db.insert(auditLogs).values({reservationId:record.id,action:"eliminacion definitiva",actorEmail:request.headers.get("x-ed-user-email")||"",actorName:request.headers.get("x-ed-user-name")||"",changes:JSON.stringify({deleted:record})});
+    await db.insert(auditLogs).values({reservationId:record.id,action:"eliminacion definitiva",actorEmail:request.headers.get("x-ed-user-email")||"",actorName:requestIdentityName(request),changes:JSON.stringify({deleted:record})});
     await db.delete(reservations).where(eq(reservations.id,record.id));
     return Response.json({ok:true,id:record.id});
   }catch(error){

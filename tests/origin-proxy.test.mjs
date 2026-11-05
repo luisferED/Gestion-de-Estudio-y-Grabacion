@@ -7,6 +7,9 @@ import ts from 'typescript';
 import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,signRequestOrigin,verifyRequestOrigin} from '../tools/request-origin.mjs';
 const publicOrigin='https://grabaciones.ed',secret='fixture-gateway-secret-'.repeat(3);
 let source=await readFile(new URL('../worker/index.ts',import.meta.url),'utf8');
+source=source.replace('import {getSession} from "../lib/auth-session";','const getSession=async(db,req)=>req.headers.get("Cookie")?db.prepare("").bind("").first():null;');
+source=source.replace('import {setIdentityName} from "../lib/request-identity";','const setIdentityName=(h,n)=>{h.set("x-ed-user-name",encodeURIComponent(n));h.set("x-ed-user-name-encoding","percent-encoded-utf-8")};');
+
 source=source.replace('from "../tools/request-origin.mjs"','from '+JSON.stringify(new URL('../tools/request-origin.mjs',import.meta.url).href));
 source=source.replace('import {sha256Base64Url} from "../lib/keycloak";','const sha256Base64Url=async()=>"fixture-hash";');
 source=source.replace('import handler from "vinext/server/app-router-entry";','const handler={fetch:async()=>Response.json({handled:true})};');

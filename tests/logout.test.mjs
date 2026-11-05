@@ -41,6 +41,7 @@ test('Salir sends credentials/no-store and navigates only after successful revoc
 test('SQLite delete failure returns 503, not ok:true or cookie-only logout',async()=>{
   globalThis.__logoutEnv={DB:{prepare(){return{bind(){return{}}}},async batch(){throw Error('database unavailable')}}};
   const routeUrl=await compiled('app/api/auth/route.ts',[
+    ['import {getSession} from "../../../lib/auth-session";','const getSession=async()=>null;'],
     ['import {keycloakConfig,keycloakDiscovery,keycloakPublicOrigin,sha256Base64Url} from "../../../lib/keycloak";','const keycloakPublicOrigin=()=>"https://grabaciones.ed",sha256Base64Url=async()=>"hash";'],
     ['import {env} from "cloudflare:workers";','const env=globalThis.__logoutEnv;'],
     ['from "../../../lib/auth-cookies"','from '+JSON.stringify(cookiesUrl)],

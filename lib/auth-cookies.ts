@@ -14,10 +14,13 @@ export function oidcCookie(publicOrigin:string,name:string,value:string,maxAge=6
 export function clearOidcCookies(headers:Headers,publicOrigin:string){
   for(const name of ["ed_oidc_state","ed_oidc_nonce","ed_oidc_verifier"])headers.append("Set-Cookie",oidcCookie(publicOrigin,name,"",0));
 }
-export function clearAuthCookies(headers:Headers,publicOrigin:string){
-  headers.append("Set-Cookie",sessionCookie(publicOrigin,"",0));
+export function clearLegacyAuthCookies(headers:Headers,publicOrigin:string){
   headers.append("Set-Cookie",serialize("ed_session","",APP_COOKIE_PATH,"Strict",publicOrigin,0));
   clearOidcCookies(headers,publicOrigin);
+}
+export function clearAuthCookies(headers:Headers,publicOrigin:string){
+  headers.append("Set-Cookie",sessionCookie(publicOrigin,"",0));
+  clearLegacyAuthCookies(headers,publicOrigin);
 }
 export function sessionTokens(request:Request){
   return [...new Set((request.headers.get("Cookie")||"").split(";").map(value=>value.trim())
