@@ -3,39 +3,62 @@ services:
     build: .
     image: gestion-ed:local
     restart: unless-stopped
+
     expose:
       - "3000"
+
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOST: 0.0.0.0
+
+      # SQLite / Cloudflare D1
       D1_STATE_DIR: /data/state
       LOCAL_AUTH_BYPASS: "false"
       SEED_DEMO_DATA: "false"
+
+      # SMTP
       SMTP_ENCRYPTION_KEY: ${SMTP_ENCRYPTION_KEY:-}
+
+      # Keycloak
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:?Configure KEYCLOAK_ISSUER}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-grabaciones}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?Configure KEYCLOAK_CLIENT_SECRET}
       KEYCLOAK_PUBLIC_ORIGIN: ${KEYCLOAK_PUBLIC_ORIGIN:-https://grabaciones.ed}
+
+      # Certificado de la CA corporativa
+      NODE_EXTRA_CA_CERTS: /etc/ssl/certs/grupoeldeber-ca.crt
+
     volumes:
+      # Base de datos persistente
       - gestion_ed_data:/data
+
+      # Certificado corporativo en modo solo lectura
+      - /opt/gestion-ed/certs/grupoeldeber-ca.crt:/etc/ssl/certs/grupoeldeber-ca.crt:ro
+
     networks:
       - dokploy-network
+
     cpus: 2.0
     mem_limit: 2g
     pids_limit: 256
+
     security_opt:
       - no-new-privileges:true
+
     cap_drop:
       - ALL
+
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "3"
+
 volumes:
   gestion_ed_data:
     name: gestion_ed_dokploy_data
+
 networks:
   dokploy-network:
     external: true
