@@ -1,0 +1,160 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784209773354,
+      "tag": "0000_true_callisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784210937104,
+      "tag": "0001_mature_lily_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784212064627,
+      "tag": "0002_pale_proudstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784212482123,
+      "tag": "0003_dizzy_calypso",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784220997442,
+      "tag": "0004_luxuriant_rhino",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784221967636,
+      "tag": "0005_lazy_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784230284469,
+      "tag": "0006_mean_wrecking_crew",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784294887344,
+      "tag": "0007_dazzling_wrecker",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784296076793,
+      "tag": "0008_outgoing_sleeper",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784298827018,
+      "tag": "0009_misty_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1784317246519,
+      "tag": "0010_sloppy_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1784318569832,
+      "tag": "0011_adorable_longshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784748335453,
+      "tag": "0012_quick_chamber",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1784749134754,
+      "tag": "0013_colorful_mach_iv",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1784764963097,
+      "tag": "0014_rainy_blindfold",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1785301200000,
+      "tag": "0015_staff_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1785337200000,
+      "tag": "0016_duty_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1785744000000,
+      "tag": "0017_studio_ii_midday_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1785830400000,
+      "tag": "0018_approval_sound_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1785916800000,
+      "tag": "0019_editing_staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1793840400000,
+      "tag": "0020_auth_and_duty_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1793840400001,
+      "tag": "0021_reservation_concurrency",
+      "breakpoints": true
+    }
+  ]
+}

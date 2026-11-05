@@ -1,0 +1,4 @@
+import { desc, eq } from "drizzle-orm";
+import { getDb } from "../../../db";
+import { auditLogs } from "../../../db/schema";
+export async function GET(request:Request){try{const email=String(request.headers.get("x-ed-user-email")||"").trim().toLowerCase(),role=String(request.headers.get("x-ed-user-role")||""),allAgendaLogs=["administrador","jefe_produccion"].includes(role);if(!email)return Response.json({error:"No se pudo identificar al usuario."},{status:401});const db=getDb(),logs=allAgendaLogs?await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(500):await db.select().from(auditLogs).where(eq(auditLogs.actorEmail,email)).orderBy(desc(auditLogs.createdAt)).limit(200);return Response.json({logs,scope:allAgendaLogs?"all":"own"})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo cargar la bitácora."},{status:500})}}

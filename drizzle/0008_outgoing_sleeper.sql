@@ -1,0 +1,1 @@
+ALTER TABLE `schedule_blocks` ADD `resource` text DEFAULT 'estudio' NOT NULL;

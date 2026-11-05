@@ -1,0 +1,44 @@
+{
+  "name": "agenda-operaciones-el-deber",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node tools/run-local.mjs dev",
+    "build": "vite build",
+    "start": "node tools/run-local.mjs start",
+    "test": "node --test tests/security.test.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply site-creator-d1 --local --config wrangler.local.jsonc",
+    "start:container": "python3 tools/runtime.py"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "wrangler": "4.157.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.67.0",
+    "@cloudflare/workers-types": "5.20261103.1",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.39",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.4.5",
+    "react-server-dom-webpack": "19.3.1",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "vinext": "1.4.3",
+    "vite": "8.3.6"
+  },
+  "type": "module"
+}

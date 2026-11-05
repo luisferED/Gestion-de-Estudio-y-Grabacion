@@ -1,0 +1,1 @@
+ALTER TABLE `reservations` ADD `requesting_area` text DEFAULT 'PRODUCCIÓN' NOT NULL;

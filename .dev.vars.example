@@ -1,0 +1,10 @@
+# Configuración del servidor nuevo. No incluya este archivo con credenciales reales.
+PORT=3000
+HOST=0.0.0.0
+LOCAL_AUTH_BYPASS=false
+
+# Reemplace todos los valores de ejemplo antes de preparar el sistema.
+KEYCLOAK_ISSUER=http://IP-O-NOMBRE-KEYCLOAK:8080/realms/NOMBRE-DEL-REALM
+KEYCLOAK_CLIENT_ID=cliente-de-la-aplicacion
+KEYCLOAK_CLIENT_SECRET=secreto-entregado-por-ti
+KEYCLOAK_PUBLIC_ORIGIN=http://IP-O-NOMBRE-DEL-NUEVO-SERVIDOR:3000

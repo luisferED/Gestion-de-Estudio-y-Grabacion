@@ -1,0 +1,13 @@
+import { asc, eq } from "drizzle-orm";
+import { env } from "cloudflare:workers";
+import { getDb } from "../../../db";
+import { editingStaff } from "../../../db/schema";
+
+const ROLES=["EDITOR","CAMAROGRAFO","FILMAKER","CLIPEADOR"];
+async function ensureTable(){await env.DB.prepare("CREATE TABLE IF NOT EXISTS editing_staff (id integer PRIMARY KEY AUTOINCREMENT NOT NULL, name text NOT NULL, role text NOT NULL, active integer DEFAULT true NOT NULL, created_at text DEFAULT CURRENT_TIMESTAMP NOT NULL)").run()}
+function valid(name:string,role:string){if(!name.trim())return "Indique el nombre del personal de edición.";if(!ROLES.includes(role))return "Seleccione Editor, Camarógrafo, Filmmaker o Clipeador.";return ""}
+
+export async function GET(){try{return Response.json({staff:await getDb().select().from(editingStaff).orderBy(asc(editingStaff.role),asc(editingStaff.name))})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo cargar el personal de edición."},{status:500})}}
+export async function POST(request:Request){try{const p=await request.json() as {name:string;role:string},issue=valid(p.name||"",p.role||"");if(issue)return Response.json({error:issue},{status:400});const [member]=await getDb().insert(editingStaff).values({name:p.name.trim().toUpperCase(),role:p.role}).returning();return Response.json({member},{status:201})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo agregar el personal de edición."},{status:500})}}
+export async function PATCH(request:Request){try{const p=await request.json() as {id:number;name?:string;role?:string;active?:boolean},db=getDb(),[before]=await db.select().from(editingStaff).where(eq(editingStaff.id,p.id)).limit(1);if(!before)return Response.json({error:"Persona inexistente."},{status:404});const name=p.name?.trim().toUpperCase()||before.name,role=p.role||before.role,issue=valid(name,role);if(issue)return Response.json({error:issue},{status:400});const [member]=await db.update(editingStaff).set({name,role,...(typeof p.active==="boolean"?{active:p.active}:{})}).where(eq(editingStaff.id,p.id)).returning();return Response.json({member})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo actualizar el personal de edición."},{status:500})}}
+export async function DELETE(request:Request){try{const {id}=await request.json() as {id:number};const [member]=await getDb().delete(editingStaff).where(eq(editingStaff.id,id)).returning();if(!member)return Response.json({error:"Persona inexistente."},{status:404});return Response.json({member})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo eliminar el personal de edición."},{status:500})}}

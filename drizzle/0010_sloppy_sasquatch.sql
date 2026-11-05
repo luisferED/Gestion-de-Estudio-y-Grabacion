@@ -1,0 +1,1 @@
+ALTER TABLE `reservations` ADD `assigned_operators` text DEFAULT '[]' NOT NULL;
