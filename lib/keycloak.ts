@@ -38,7 +38,7 @@ export function keycloakPublicOrigin(request:Request){
 }
 
 export async function keycloakDiscovery(issuer:string){
-  const response=await fetch(`${issuer}/.well-known/openid-configuration`,{headers:{Accept:"application/json"}});
+  const response=await fetch(`${issuer}/.well-known/openid-configuration`,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(5000)});
   if(!response.ok)throw new Error(`Keycloak no publicó su configuración OIDC (${response.status}).`);
   const discovery=await response.json() as KeycloakDiscovery;
   if(discovery.issuer!==issuer)throw new Error("El issuer publicado por Keycloak no coincide con el realm configurado.");

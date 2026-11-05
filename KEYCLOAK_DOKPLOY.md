@@ -57,7 +57,7 @@ docker compose exec gestion-ed node -e "const i=process.env.KEYCLOAK_ISSUER;fetc
 ~~~
 El script consulta discovery y JWKS y compara issuer, sin imprimir secret. No valida credenciales ni crea usuarios. Si la IP/hostname publicado por Keycloak no es accesible tanto desde el navegador como desde el contenedor, corrija DNS/rutas con el responsable. No reescriba silenciosamente el issuer a otro nombre interno.
 
-Luego pruebe login con una cuenta corporativa de prueba, revise el callback, confirme el rol local, cierre sesión y compruebe que la sesión local dejó de funcionar. Sin id_token_hint, Keycloak puede pedir confirmación al cerrar la sesión corporativa; no se guarda el ID Token en SQLite.
+Luego pruebe login con una cuenta corporativa de prueba, revise el callback, confirme el rol local, cierre sesión y compruebe que la sesión local dejó de funcionar. La sesión conserva en SQLite el ID Token validado y el end_session_endpoint descubierto para enviar id_token_hint al logout oficial. Se eliminan al revocar esa sesión; no se almacenan access_token ni refresh_token. Las sesiones anteriores a la migración 0022, sin hint, pueden requerir confirmación de Keycloak.
 
 ## Sesiones y HTTPS
 

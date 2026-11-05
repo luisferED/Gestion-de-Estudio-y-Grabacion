@@ -20,5 +20,6 @@
   "0018_approval_sound_fields.sql": "3075168b2f9b43470f792b211c2c75ab8d98204e7daab401e9a9a9304438d0e0",
   "0019_editing_staff.sql": "113d37ae79be16e04f2aeeb624ba4f5ec25c69471db08e9753bcc9d53ea8f8bc",
   "0020_auth_and_duty_updates.sql": "519119ade824814f1228da3c40a2346b5a2efdf8de47984d49b23429e0b8a7ed",
-  "0021_reservation_concurrency.sql": "74ed2862e684714a60d5b2aeb47a280199c8d1dd5bd49cfba76347b30d93ca34"
+  "0021_reservation_concurrency.sql": "74ed2862e684714a60d5b2aeb47a280199c8d1dd5bd49cfba76347b30d93ca34",
+  "0022_oidc_logout_context.sql": "08b071ff25783a49c9cae48c136c80b718824d9761e93633cfb18d3e64ba7765"
 }

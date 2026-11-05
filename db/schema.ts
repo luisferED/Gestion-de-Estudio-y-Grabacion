@@ -165,6 +165,8 @@ export const smtpSettings = sqliteTable("smtp_settings", {
 
 
 export const authSessions = sqliteTable("auth_sessions", {
+  idTokenHint: text("id_token_hint").notNull().default(""),
+  endSessionEndpoint: text("end_session_endpoint").notNull().default(""),
   token: text("token").primaryKey().notNull(),
   userEmail: text("user_email").notNull(),
   expiresAt: text("expires_at").notNull(),

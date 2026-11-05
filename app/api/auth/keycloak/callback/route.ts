@@ -1,11 +1,10 @@
 import {env} from "cloudflare:workers";
-import {APP_BASE_PATH,APP_COOKIE_PATH} from "../../../../../lib/app-path";
+import {clearOidcCookies,clearAuthCookies,sessionCookie} from "../../../../../lib/auth-cookies";
 import {keycloakConfig,keycloakDiscovery,keycloakPublicOrigin,keycloakUserInfo,randomBase64Url,verifyIdToken,sha256Base64Url} from "../../../../../lib/keycloak";
 
 type LocalUser={id:number;email:string;name:string;program:string;role:string;active:number};
 const cookie=(request:Request,name:string)=>{const raw=(request.headers.get("Cookie")||"").split(";").map(value=>value.trim()).find(value=>value.startsWith(`${name}=`))?.slice(name.length+1)||"";try{return decodeURIComponent(raw)}catch{return ""}};
-const clearOidcCookies=(headers:Headers)=>{for(const name of ["ed_oidc_state","ed_oidc_nonce","ed_oidc_verifier"])headers.append("Set-Cookie",`${name}=; Path=${APP_BASE_PATH}/api/auth/keycloak; HttpOnly; SameSite=Lax; Max-Age=0`)};
-const errorRedirect=(request:Request,message:string)=>{const headers=new Headers({Location:`${keycloakPublicOrigin(request)}?auth_error=${encodeURIComponent(message)}`,"Cache-Control":"no-store"});clearOidcCookies(headers);return new Response(null,{status:302,headers})};
+const errorRedirect=(request:Request,message:string)=>{const headers=new Headers({Location:`${keycloakPublicOrigin(request)}?auth_error=${encodeURIComponent(message)}`,"Cache-Control":"no-store"});clearOidcCookies(headers,keycloakPublicOrigin(request));return new Response(null,{status:302,headers})};
 
 export async function GET(request:Request){
   try{
@@ -33,12 +32,11 @@ export async function GET(request:Request){
     }
     if(!user||!user.active)throw new Error(`La cuenta ${email} está validada, pero fue desactivada en la plataforma. Comuníquese con Operaciones.`);
     const token=randomBase64Url(48),maxAge=12*60*60,expiresAt=new Date(Date.now()+maxAge*1000).toISOString();
-    await env.DB.prepare("INSERT INTO auth_sessions (token,user_email,expires_at) VALUES (?,?,?)").bind("sha256:"+await sha256Base64Url(token),user.email,expiresAt).run();
+    await env.DB.prepare("INSERT INTO auth_sessions (token,user_email,expires_at,id_token_hint,end_session_endpoint) VALUES (?,?,?,?,?)").bind("sha256:"+await sha256Base64Url(token),user.email,expiresAt,tokens.id_token,discovery.end_session_endpoint||"").run();
     const destination=["administrador","jefe_operaciones"].includes(user.role)?"/admin":"/";
     const headers=new Headers({Location:`${config.publicOrigin}${destination}?auth_success=1`,"Cache-Control":"no-store"});
-    headers.append("Set-Cookie",`ed_session_v2=${token}; Path=${APP_COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.publicOrigin.startsWith("https://")?"; Secure":""}`);
-    headers.append("Set-Cookie",`ed_session=; Path=${APP_COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0`);
-    clearOidcCookies(headers);
+    clearAuthCookies(headers,config.publicOrigin);
+    headers.append("Set-Cookie",sessionCookie(config.publicOrigin,token,maxAge));
     return new Response(null,{status:302,headers});
   }catch(error){
     return errorRedirect(request,error instanceof Error?error.message:"No se pudo completar el inicio de sesión corporativo.");

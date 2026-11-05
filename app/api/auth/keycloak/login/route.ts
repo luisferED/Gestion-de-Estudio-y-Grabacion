@@ -1,8 +1,7 @@
-import {env} from "cloudflare:workers";
-import {APP_BASE_PATH} from "../../../../../lib/app-path";
+import {oidcCookie} from "../../../../../lib/auth-cookies";
 import {keycloakConfig,keycloakDiscovery,keycloakPublicOrigin,randomBase64Url,sha256Base64Url} from "../../../../../lib/keycloak";
 
-const authCookie=(name:string,value:string)=>`${name}=${encodeURIComponent(value)}; Path=${APP_BASE_PATH}/api/auth/keycloak; HttpOnly; SameSite=Lax; Max-Age=600${String((env as unknown as Record<string,string>).KEYCLOAK_PUBLIC_ORIGIN||"").startsWith("https://")?"; Secure":""}`;
+
 
 export async function GET(request:Request){
   try{
@@ -15,9 +14,9 @@ export async function GET(request:Request){
     parameters.set("max_age","0");
     authorization.search=parameters.toString();
     const headers=new Headers({Location:authorization.toString(),"Cache-Control":"no-store"});
-    headers.append("Set-Cookie",authCookie("ed_oidc_state",state));
-    headers.append("Set-Cookie",authCookie("ed_oidc_nonce",nonce));
-    headers.append("Set-Cookie",authCookie("ed_oidc_verifier",verifier));
+    headers.append("Set-Cookie",oidcCookie(config.publicOrigin,"ed_oidc_state",state));
+    headers.append("Set-Cookie",oidcCookie(config.publicOrigin,"ed_oidc_nonce",nonce));
+    headers.append("Set-Cookie",oidcCookie(config.publicOrigin,"ed_oidc_verifier",verifier));
     return new Response(null,{status:302,headers});
   }catch(error){
     const message=error instanceof Error?error.message:"No se pudo iniciar la conexión con Keycloak.";
