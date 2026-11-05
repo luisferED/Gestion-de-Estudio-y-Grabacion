@@ -34,8 +34,12 @@ export async function GET(request:Request){
     if(!user||!isActiveUser(user.active))throw new Error(`La cuenta ${email} está validada, pero fue desactivada en la plataforma. Comuníquese con Operaciones.`);
     const token=randomBase64Url(48),maxAge=12*60*60,expiresAt=new Date(Date.now()+maxAge*1000).toISOString();
     await env.DB.prepare("INSERT INTO auth_sessions (token,user_email,expires_at,id_token_hint,end_session_endpoint) VALUES (?,?,?,?,?)").bind("sha256:"+await sha256Base64Url(token),user.email,expiresAt,tokens.id_token,discovery.end_session_endpoint||"").run();
-    const destination=["administrador","jefe_operaciones"].includes(user.role)?"/admin":"/";
-    const headers=new Headers({Location:`${config.publicOrigin}${destination}?auth_success=1`,"Cache-Control":"no-store"});
+    // The calendar is the application home for every role. Administration remains
+    // a separate protected page reached explicitly from the Dashboard button.
+    const destination="/";
+    console.info("[auth] callback session committed",JSON.stringify({destination,secure:config.publicOrigin.startsWith("https://")}));
+
+    const headers=new Headers({Location:`${config.publicOrigin}${destination}?auth_success=1`,"Cache-Control":"no-store","X-ED-Auth-Result":"session-created"});
     clearLegacyAuthCookies(headers,config.publicOrigin);
     headers.append("Set-Cookie",sessionCookie(config.publicOrigin,token,maxAge));
     return new Response(null,{status:302,headers});

@@ -13,6 +13,18 @@ export function isPublicPath(raw){
   if(!file.startsWith(root+path.sep))return false;
   try{return statSync(file).isFile()}catch{return false}
 }
+// Wrangler's local proxy rewrites URL headers to HTTP. Restore only our own
+// configured public HTTPS origin; never rewrite an external OIDC destination.
+export function publicRedirectLocation(location,publicOrigin){
+  try{
+    const target=new URL(location,publicOrigin),publicUrl=new URL(publicOrigin);
+    if(publicUrl.protocol==="https:"&&target.protocol==="http:"&&target.host===publicUrl.host&&!target.username&&!target.password){
+      target.protocol=publicUrl.protocol;
+      return target.href;
+    }
+  }catch{}
+  return location;
+}
 export function createGateway(){
   const publicOrigin=configuredPublicOrigin(process.env.KEYCLOAK_PUBLIC_ORIGIN);
   const gatewaySecret=process.env.ED_GATEWAY_SECRET;
@@ -40,6 +52,9 @@ export function createGateway(){
     if(length)headers['content-length']=String(length);
     const upstream=http.request({hostname:'127.0.0.1',port:internalPort,method:req.method,path:req.url,headers},reply=>{
       const responseHeaders={...reply.headers};delete responseHeaders.connection;
+      if(typeof responseHeaders.location==="string"){
+        responseHeaders.location=publicRedirectLocation(responseHeaders.location,publicOrigin);
+      }
       res.writeHead(reply.statusCode||502,responseHeaders);reply.pipe(res);
     });
     upstream.setTimeout(60000,()=>upstream.destroy(new Error('Upstream timeout')));

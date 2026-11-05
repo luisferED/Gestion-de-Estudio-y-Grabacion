@@ -15,22 +15,30 @@ export default function AuthGate({children}:{children:React.ReactNode}){
   const [user,setUser]=useState<AuthUser|null>(null),[checking,setChecking]=useState(true);
   const authEpoch=useRef(0),loggingOut=useRef(false);
   useEffect(()=>{
-    const controller=new AbortController(),epoch=authEpoch.current;
+    let controller:AbortController|undefined;
     const url=new URL(window.location.href);
     if(url.searchParams.get("auth_success")==="1"){
       url.searchParams.delete("auth_success");
       history.replaceState(null,"",url.pathname+url.search+url.hash);
     }
-    fetch("/api/auth",{credentials:"same-origin",cache:"no-store",signal:controller.signal})
-      .then(async response=>{
-        const data=await response.json();
-        if(epoch!==authEpoch.current)return;
-        setUser(response.ok?data.user:null);
-      }).catch(()=>{if(epoch===authEpoch.current)setUser(null)})
-      .finally(()=>{if(epoch===authEpoch.current)setChecking(false)});
-    const restored=(event:PageTransitionEvent)=>{if(event.persisted)window.location.reload()};
+    const validateSession=()=>{
+      controller?.abort();
+      controller=new AbortController();
+      const current=controller,epoch=++authEpoch.current;
+      fetch("/api/auth",{credentials:"same-origin",cache:"no-store",signal:current.signal})
+        .then(async response=>{
+          const data=await response.json();
+          if(current.signal.aborted||epoch!==authEpoch.current)return;
+          setUser(response.ok?data.user:null);
+        }).catch(()=>{if(!current.signal.aborted&&epoch===authEpoch.current)setUser(null)})
+        .finally(()=>{if(!current.signal.aborted&&epoch===authEpoch.current)setChecking(false)});
+    };
+    validateSession();
+    const restored=(event:PageTransitionEvent)=>{
+      if(event.persisted){setUser(null);setChecking(true);validateSession()}
+    };
     window.addEventListener("pageshow",restored);
-    return ()=>{controller.abort();window.removeEventListener("pageshow",restored)};
+    return ()=>{controller?.abort();window.removeEventListener("pageshow",restored)};
   },[]);
   const logout=async()=>{
     if(loggingOut.current)return;

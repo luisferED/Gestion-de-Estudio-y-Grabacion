@@ -1,5 +1,6 @@
 import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,verifyRequestOrigin} from "../tools/request-origin.mjs";
 import {getSession} from "../lib/auth-session";
+import {sessionTokens} from "../lib/auth-cookies";
 import {setIdentityName} from "../lib/request-identity";
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import handler from "vinext/server/app-router-entry";
@@ -74,7 +75,18 @@ const worker = {
     if((appPath.startsWith("/api/")&&!publicAuth.includes(appPath)) || appPath==="/admin" || appPath.startsWith("/admin/")){
       try{
         const session=await getSession(env.DB,request);
-        if(!session)return Response.json({error:"Debe iniciar sesión con su cuenta corporativa."},{status:401});
+        if(!session){
+          const cookiePresent=sessionTokens(request).length>0;
+          const reason=cookiePresent?"session-unavailable":"cookie-missing";
+          if(appPath==="/admin"||appPath.startsWith("/admin/")){
+            console.warn("[auth] admin login required",JSON.stringify({reason,cookiePresent}));
+            return new Response(null,{status:302,headers:{
+              Location:new URL(APP_BASE_PATH||"/",configuredPublicOrigin(runtime.KEYCLOAK_PUBLIC_ORIGIN)).href,
+              "Cache-Control":"no-store","X-ED-Auth-Result":reason,
+            }});
+          }
+          return Response.json({error:"Debe iniciar sesión con su cuenta corporativa."},{status:401,headers:{"Cache-Control":"no-store","X-ED-Auth-Result":reason}});
+        }
         const mutating=!["GET","HEAD","OPTIONS"].includes(request.method);
         const pathMatches=(path:string)=>appPath===path||appPath.startsWith(path+"/");
         const adminRole=["administrador","jefe_operaciones","productor"].includes(session.role);
@@ -112,6 +124,7 @@ const worker = {
     headers.set("Referrer-Policy","same-origin");
     headers.set("X-Frame-Options","DENY");
     if(appPath.startsWith("/api/")||appPath.startsWith("/admin")) headers.set("Cache-Control","no-store");
+    if(appPath==="/admin"||appPath.startsWith("/admin/"))headers.set("X-ED-Auth-Result","authorized");
     return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
   },
 };
