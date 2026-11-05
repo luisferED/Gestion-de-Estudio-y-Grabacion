@@ -1,3 +1,4 @@
+import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,signRequestOrigin} from "./request-origin.mjs";
 import http from 'node:http';
 import {statSync} from 'node:fs';
 import path from 'node:path';
@@ -13,14 +14,29 @@ export function isPublicPath(raw){
   try{return statSync(file).isFile()}catch{return false}
 }
 export function createGateway(){
+  const publicOrigin=configuredPublicOrigin(process.env.KEYCLOAK_PUBLIC_ORIGIN);
+  const gatewaySecret=process.env.ED_GATEWAY_SECRET;
+  if(!gatewaySecret||gatewaySecret.length<32)throw new Error("Internal gateway secret is missing");
+
   const server=http.createServer(async(req,res)=>{
     if(!isPublicPath(req.url)){res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');return;}
+    const mutating=!["GET","HEAD","OPTIONS"].includes(req.method||"GET");
+    // Validate the browser header before Wrangler rewrites URL-related headers.
+    // Never infer the public origin from Host, Forwarded or X-Forwarded-*.
+    if(mutating&&req.headers.origin!==publicOrigin){
+      res.writeHead(403,{"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({error:"Origen de petición no autorizado."}));return;
+    }
     const chunks=[];let length=0;
     try{
       for await(const chunk of req){length+=chunk.length;if(length>5*1024*1024){res.writeHead(413);res.end('Payload too large');return}chunks.push(chunk)}
     }catch{res.destroy();return}
     const headers={...req.headers};
-    for(const key of Object.keys(headers))if(key.startsWith('x-ed-user-')||['connection','transfer-encoding','upgrade','proxy-authorization','proxy-connection'].includes(key))delete headers[key];
+    for(const key of Object.keys(headers))if(key===ORIGIN_PROOF_HEADER||key==='forwarded'||key.startsWith('x-forwarded-')||key.startsWith('x-ed-user-')||['connection','transfer-encoding','upgrade','proxy-authorization','proxy-connection'].includes(key))delete headers[key];
+    if(mutating){
+      const target=new URL(req.url||"/",publicOrigin);
+      headers[ORIGIN_PROOF_HEADER]=await signRequestOrigin(gatewaySecret,publicOrigin,req.method||"GET",target.pathname+target.search);
+    }
     if(length)headers['content-length']=String(length);
     const upstream=http.request({hostname:'127.0.0.1',port:internalPort,method:req.method,path:req.url,headers},reply=>{
       const responseHeaders={...reply.headers};delete responseHeaders.connection;

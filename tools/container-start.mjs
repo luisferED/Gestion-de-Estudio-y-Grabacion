@@ -1,3 +1,5 @@
+import {randomBytes} from "node:crypto";
+import {configuredPublicOrigin} from "./request-origin.mjs";
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 const state = process.env.D1_STATE_DIR || '/data/state';
@@ -5,6 +7,9 @@ if (process.env.LOCAL_AUTH_BYPASS !== 'false') throw new Error('LOCAL_AUTH_BYPAS
 for (const key of ['KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','KEYCLOAK_CLIENT_SECRET','KEYCLOAK_PUBLIC_ORIGIN']) {
   if (!process.env[key]) throw new Error('Missing ' + key);
 }
+process.env.KEYCLOAK_PUBLIC_ORIGIN=configuredPublicOrigin(process.env.KEYCLOAK_PUBLIC_ORIGIN);
+// Ephemeral server-only key shared by the gateway and Worker, never supplied by a client.
+process.env.ED_GATEWAY_SECRET=randomBytes(32).toString('base64url');
 process.env.X_LOCAL_EXPLORER='false';
 process.env.X_LOCAL_OBSERVABILITY='false';
 process.env.CLOUDFLARE_INCLUDE_PROCESS_ENV='true';
@@ -21,7 +26,7 @@ const config = JSON.parse(readFileSync('dist/server/wrangler.json','utf8'));
 config.vars = Object.fromEntries(['KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','KEYCLOAK_CLIENT_SECRET','KEYCLOAK_PUBLIC_ORIGIN'].filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
 Object.assign(config.vars, {LOCAL_AUTH_BYPASS:'false',SEED_DEMO_DATA:'false',DEPLOYMENT_MODE:'production'});
 delete config.vars.KEYCLOAK_CLIENT_SECRET;
-config.secrets={required:['KEYCLOAK_CLIENT_SECRET',...(process.env.SMTP_ENCRYPTION_KEY?['SMTP_ENCRYPTION_KEY']:[])]};
+config.secrets={required:['KEYCLOAK_CLIENT_SECRET','ED_GATEWAY_SECRET',...(process.env.SMTP_ENCRYPTION_KEY?['SMTP_ENCRYPTION_KEY']:[])]};
 // Secrets are injected only at container start, never during the image build.
 writeFileSync('dist/server/runtime.json', JSON.stringify(config), {mode:0o600});
 const children = [

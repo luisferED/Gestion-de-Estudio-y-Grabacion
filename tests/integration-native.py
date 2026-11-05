@@ -1,4 +1,5 @@
 # Reproducible integration test against native Wrangler/Miniflare, using only disposable local state.
+import secrets
 import concurrent.futures
 import http.cookiejar, json, os, pathlib, sqlite3, subprocess, sys, time, urllib.request, urllib.error, urllib.parse
 root=pathlib.Path(__file__).resolve().parents[1]
@@ -7,6 +8,8 @@ state=root/'outputs'/('integration-state-'+str(time.time_ns()))
 state.mkdir(parents=True,exist_ok=True)
 env=dict(os.environ,D1_STATE_DIR=str(state),KEYCLOAK_CLIENT_SECRET='fixture-only',WRANGLER_SEND_METRICS='false',WRANGLER_WRITE_LOGS='false',CLOUDFLARE_INCLUDE_PROCESS_ENV='true',X_LOCAL_EXPLORER='false',X_LOCAL_OBSERVABILITY='false',PORT='16680',HOST='127.0.0.1',INTERNAL_APP_PORT='16683')
 origin='http://127.0.0.1:16680'
+env['KEYCLOAK_PUBLIC_ORIGIN']=origin
+env['ED_GATEWAY_SECRET']=secrets.token_urlsafe(32)
 wrangler=['node','node_modules/wrangler/bin/wrangler.js']
 results=[]
 processes=[]
@@ -87,7 +90,7 @@ try:
     check('bootstrap rejects SQL injection',bad.returncode!=0)
     config=json.loads((root/'dist/server/wrangler.json').read_text())
     config['vars']={'KEYCLOAK_ISSUER':'http://127.0.0.1:16681/realms/test','KEYCLOAK_CLIENT_ID':'ed-fixture','KEYCLOAK_PUBLIC_ORIGIN':origin,'LOCAL_AUTH_BYPASS':'false','DEPLOYMENT_MODE':'production','SEED_DEMO_DATA':'false'}
-    config['secrets']={'required':['KEYCLOAK_CLIENT_SECRET']}
+    config['secrets']={'required':['KEYCLOAK_CLIENT_SECRET','ED_GATEWAY_SECRET']}
     configfile=root/'dist/server/runtime-validation.json'
     configfile.write_text(json.dumps(config))
     fixture=start(['node','tests/oidc-fixture.mjs'],'integration-oidc.log')

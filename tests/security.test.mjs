@@ -38,6 +38,7 @@ test('OIDC verifies RSA signature, issuer, audience, expiry, nonce, subject, iat
 });
 globalThis.__workerSha=keycloak.sha256Base64Url;
 const {default:worker}=await moduleFrom('worker/index.ts',[
+  ['from "../tools/request-origin.mjs"','from '+JSON.stringify(new URL('../tools/request-origin.mjs',import.meta.url).href)],
   [/import \{sha256Base64Url\} from "..\/lib\/keycloak";/,'const sha256Base64Url=globalThis.__workerSha;'],
   [/import handler from "vinext\/server\/app-router-entry";/,'const handler={fetch:async(request)=>Response.json({email:request.headers.get("x-ed-user-email"),role:request.headers.get("x-ed-user-role")})};'],
   [/import \{APP_BASE_PATH\} from "..\/lib\/app-path";/,'const APP_BASE_PATH="";'],

@@ -1,4 +1,5 @@
 # Focused real D1/HTTP logout test with two synthetic identities, no reservation writes.
+import secrets
 import base64,hashlib,http.cookiejar,json,os,pathlib,sqlite3,subprocess,sys,tempfile,time,urllib.request,urllib.error,urllib.parse
 root=pathlib.Path(__file__).resolve().parents[1]
 os.chdir(root)
@@ -7,6 +8,8 @@ state=work/'state'
 origin='http://127.0.0.1:18780'
 issuer='http://127.0.0.1:18781/realms/test'
 env=dict(os.environ,PYTHONUTF8='1',D1_STATE_DIR=str(state),KEYCLOAK_CLIENT_SECRET='fixture-only',WRANGLER_SEND_METRICS='false',WRANGLER_WRITE_LOGS='false',CLOUDFLARE_INCLUDE_PROCESS_ENV='true',X_LOCAL_EXPLORER='false',X_LOCAL_OBSERVABILITY='false',PORT='18780',HOST='127.0.0.1',INTERNAL_APP_PORT='18783',TEST_ISSUER=issuer,TEST_OIDC_PORT='18781',TEST_PUBLIC_ORIGIN=origin,TEST_SSO='true')
+env['KEYCLOAK_PUBLIC_ORIGIN']=origin
+env['ED_GATEWAY_SECRET']=secrets.token_urlsafe(32)
 wrangler=['node','node_modules/wrangler/bin/wrangler.js']
 checks=[];processes=[]
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -42,7 +45,7 @@ try:
     info=json.loads(run([sys.executable,'tools/db-admin.py','inspect']));dbpath=pathlib.Path(info['sqlite'])
     config=json.loads((root/'dist/server/wrangler.json').read_text(encoding='utf8'))
     config['vars']={'KEYCLOAK_ISSUER':issuer,'KEYCLOAK_CLIENT_ID':'grabaciones','KEYCLOAK_PUBLIC_ORIGIN':origin,'LOCAL_AUTH_BYPASS':'false','DEPLOYMENT_MODE':'production','SEED_DEMO_DATA':'false'}
-    config['secrets']={'required':['KEYCLOAK_CLIENT_SECRET']}
+    config['secrets']={'required':['KEYCLOAK_CLIENT_SECRET','ED_GATEWAY_SECRET']}
     configfile=root/'dist/server/runtime-logout-test.json';configfile.write_text(json.dumps(config),encoding='utf8')
     start(['node','tests/oidc-fixture.mjs'],'oidc.log')
     start(['node','tools/http-gateway.mjs'],'gateway.log')

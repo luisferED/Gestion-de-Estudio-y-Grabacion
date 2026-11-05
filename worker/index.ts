@@ -1,3 +1,4 @@
+import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,verifyRequestOrigin} from "../tools/request-origin.mjs";
 import {sha256Base64Url} from "../lib/keycloak";
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import handler from "vinext/server/app-router-entry";
@@ -24,10 +25,16 @@ const worker = {
     const cleanHeaders = new Headers(request.headers);
     for (const key of [...cleanHeaders.keys()]) if (key.toLowerCase().startsWith("x-ed-user-")) cleanHeaders.delete(key);
     request = new Request(request, {headers:cleanHeaders});
-    const publicOrigin = runtime.KEYCLOAK_PUBLIC_ORIGIN || url.origin;
+
     if (!["GET","HEAD","OPTIONS"].includes(request.method)) {
-      if (request.headers.get("Origin") !== new URL(publicOrigin).origin)
-        return Response.json({error:"Origen de petición no autorizado."},{status:403});
+      let publicOrigin:string;
+      try{publicOrigin=configuredPublicOrigin(runtime.KEYCLOAK_PUBLIC_ORIGIN)}catch{
+        return Response.json({error:"Origen público del servidor no configurado."},{status:503,headers:{"Cache-Control":"no-store"}});
+      }
+      const allowed=runtime.ED_GATEWAY_SECRET
+        ? await verifyRequestOrigin(request.headers.get(ORIGIN_PROOF_HEADER),runtime.ED_GATEWAY_SECRET,publicOrigin,request.method,url.pathname+url.search)
+        : request.headers.get("Origin")===publicOrigin;
+      if(!allowed)return Response.json({error:"Origen de petición no autorizado."},{status:403,headers:{"Cache-Control":"no-store"}});
       if(Number(request.headers.get("Content-Length")||0)>5*1024*1024) return new Response("Payload too large",{status:413});
       const reader=request.body?.getReader();
       const chunks:Uint8Array[]=[];let length=0;
