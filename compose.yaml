@@ -4,8 +4,8 @@ services:
     image: gestion-ed:local
     restart: unless-stopped
 
-    expose:
-      - "3000"
+    ports:
+      - "172.20.16.195:18030:3000"
 
     environment:
       NODE_ENV: production
