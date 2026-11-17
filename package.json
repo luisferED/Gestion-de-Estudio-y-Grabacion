@@ -9,7 +9,7 @@
     "dev": "node tools/run-local.mjs dev",
     "build": "vite build",
     "start": "node tools/run-local.mjs start",
-    "test": "node --test tests/security.test.mjs tests/work-shifts.test.mjs tests/smtp-ntlm.test.mjs tests/smtp-settings.test.mjs",
+    "test": "node --test tests/security.test.mjs tests/work-shifts.test.mjs tests/smtp-ntlm.test.mjs tests/smtp-settings.test.mjs tests/smtp-diagnostics.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply site-creator-d1 --local --config wrangler.local.jsonc",

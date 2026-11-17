@@ -165,9 +165,9 @@ const server = http.createServer((request, response) => {
       const payload = JSON.parse(body);
       await sendMail(payload.config, payload.message);
       response.end(JSON.stringify({ ok: true }));
-    } catch (error) {
+    } catch {
       response.statusCode = 502;
-      response.end(JSON.stringify({ error: error instanceof Error ? error.message : "No se pudo enviar el correo." }));
+      response.end(JSON.stringify({ error: "No se pudo completar el envio SMTP. Revise los logs del servidor." }));
     }
   });
 });
