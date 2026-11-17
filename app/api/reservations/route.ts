@@ -69,7 +69,12 @@ function validate(payload: Record<string, unknown>) {
   const end = String(payload.endTime);
   if (minutes(start) >= minutes(end)) return "La hora de fin debe ser posterior a la hora de inicio.";
   if (minutes(start) < 360 || minutes(end) > 1320) return "Las reservas deben estar entre las 06:00 y las 22:00.";
-  if(payload.locationType==="estudio"){
+  // Estudio II queda completamente disponible los sÃ¡bados y domingos. La
+  // franja de cÃ¡psulas/noticiero solo corresponde a la operaciÃ³n de lunes a
+  // viernes; aplicar esa regla el fin de semana impedÃ­a reservas vÃ¡lidas.
+  const bookingDay=new Date(`${String(payload.date)}T12:00:00`).getDay();
+  const isWeekday=bookingDay>=1&&bookingDay<=5;
+  if(payload.locationType==="estudio"&&isWeekday){
     const startMin=minutes(start),endMin=minutes(end); // franja protegida 11:00 (660) – 12:30 (750): solo reservable dentro de 11:00–12:00 (720)
     if(startMin<750&&endMin>660&&(startMin<660||endMin>720))return "Estudio II: en la franja de 11:00 a 12:30 solo se puede reservar de 11:00 a 12:00.";
   }
