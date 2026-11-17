@@ -1,7 +1,10 @@
+import {verifySmtpPackage} from "./check-smtp-package.mjs";
 import {randomBytes} from "node:crypto";
 import {configuredPublicOrigin} from "./request-origin.mjs";
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+// Fail before any existing database initialization or service is launched.
+await verifySmtpPackage();
 const state = process.env.D1_STATE_DIR || '/data/state';
 if (process.env.LOCAL_AUTH_BYPASS !== 'false') throw new Error('LOCAL_AUTH_BYPASS must be false');
 for (const key of ['KEYCLOAK_ISSUER','KEYCLOAK_CLIENT_ID','KEYCLOAK_CLIENT_SECRET','KEYCLOAK_PUBLIC_ORIGIN']) {

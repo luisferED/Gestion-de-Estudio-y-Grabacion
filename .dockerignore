@@ -44,3 +44,13 @@ PARCHE_TURNOS_PERSONAL_2026-11-17
 .npm-cache
 .pip-cache
 .smtp-venv
+
+# Required SMTP runtime: keep this block last. Build preflight validates the context.
+!tools/
+!tools/check-smtp-package.mjs
+!tools/smtp-package.json
+!tools/local-smtp-relay.mjs
+!tools/smtp-ntlm.mjs
+!tools/smtp-diagnostics.mjs
+!tools/smtp-ntlm.py
+!requirements-smtp.txt

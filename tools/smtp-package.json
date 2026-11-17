@@ -1,0 +1,20 @@
+﻿{
+  "runtime": [
+    "tools/check-smtp-package.mjs",
+    "tools/smtp-package.json",
+    "tools/local-smtp-relay.mjs",
+    "tools/smtp-ntlm.mjs",
+    "tools/smtp-diagnostics.mjs",
+    "tools/smtp-ntlm.py",
+    "requirements-smtp.txt"
+  ],
+  "tests": [
+    "tests/smtp-ntlm.test.mjs",
+    "tests/smtp-settings.test.mjs",
+    "tests/smtp-diagnostics.test.mjs",
+    "tests/smtp-diagnostics.py",
+    "tests/smtp-package.test.mjs",
+    "tests/compiled-auth-cookies.mjs",
+    "tests/work-shifts.test.mjs"
+  ]
+}
