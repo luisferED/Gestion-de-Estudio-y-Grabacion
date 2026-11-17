@@ -1,3 +1,4 @@
+import {authCookiesUrl} from './compiled-auth-cookies.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -7,6 +8,7 @@ import ts from 'typescript';
 import {configuredPublicOrigin,ORIGIN_PROOF_HEADER,signRequestOrigin,verifyRequestOrigin} from '../tools/request-origin.mjs';
 const publicOrigin='https://grabaciones.ed',secret='fixture-gateway-secret-'.repeat(3);
 let source=await readFile(new URL('../worker/index.ts',import.meta.url),'utf8');
+source=source.replace('from "../lib/auth-cookies"','from '+JSON.stringify(authCookiesUrl));
 source=source.replace('import {getSession} from "../lib/auth-session";','const getSession=async(db,req)=>req.headers.get("Cookie")?db.prepare("").bind("").first():null;');
 source=source.replace('import {setIdentityName} from "../lib/request-identity";','const setIdentityName=(h,n)=>{h.set("x-ed-user-name",encodeURIComponent(n));h.set("x-ed-user-name-encoding","percent-encoded-utf-8")};');
 

@@ -1,3 +1,4 @@
+import {authCookiesUrl} from './compiled-auth-cookies.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -27,6 +28,7 @@ test('imported active booleans have one strict interpretation without activating
   for(const value of [0,false,'0','false','FALSE','',null,undefined,2,'administrador'])assert.equal(isActiveUser(value),false);
 });
 const workerModule=await compiled('worker/index.ts',[
+  ['from "../lib/auth-cookies"','from '+JSON.stringify(authCookiesUrl)],
   ['from "../tools/request-origin.mjs"','from '+JSON.stringify(new URL('../tools/request-origin.mjs',import.meta.url).href)],
   ['import {getSession} from "../lib/auth-session";','const getSession=async(db)=>db.session;'],
   ['from "../lib/request-identity"','from '+JSON.stringify(identityUrl)],

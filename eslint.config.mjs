@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "PARCHE_TURNOS_PERSONAL_2026-11-17/**",
     "next-env.d.ts",
   ]),
 ]);

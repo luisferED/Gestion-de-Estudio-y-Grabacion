@@ -1,3 +1,4 @@
+import {authCookiesUrl} from './compiled-auth-cookies.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -38,6 +39,7 @@ test('OIDC verifies RSA signature, issuer, audience, expiry, nonce, subject, iat
 });
 globalThis.__workerSha=keycloak.sha256Base64Url;
 const {default:worker}=await moduleFrom('worker/index.ts',[
+  ['from "../lib/auth-cookies"','from '+JSON.stringify(authCookiesUrl)],
   ['import {getSession} from "../lib/auth-session";','const getSession=async(db,req)=>req.headers.get("Cookie")?db.prepare("").bind("").first():null;'],
   ['import {setIdentityName} from "../lib/request-identity";','const setIdentityName=(h,n)=>{h.set("x-ed-user-name",encodeURIComponent(n));h.set("x-ed-user-name-encoding","percent-encoded-utf-8")};'],
 
@@ -64,7 +66,7 @@ test('session identity overrides forged headers',async()=>{
 });
 test('Production Chief and Producer cannot reach metrics or central administration',async()=>{
   for(const role of ['jefe_produccion','productor','operador','editor','produccion','visor']){
-    for(const path of ['/api/metrics','/api/users','/api/smtp-settings','/admin']){
+    for(const path of ['/api/metrics','/api/users','/api/work-shifts','/api/smtp-settings','/admin']){
       assert.equal((await request(path,role)).status,403,role+' '+path);
     }
   }
@@ -105,4 +107,14 @@ test('public gateway rejects runtime internals and encoded bypasses',async()=>{
   const {isPublicPath}=await import('../tools/http-gateway.mjs');
   for(const path of ['/cdn-cgi/local/explorer/api/d1/database','/%63dn-cgi/local/explorer/api/d1/database','/__scheduled','/@vite/client','/.env','/_next/static/secret.js.map'])assert.equal(isPublicPath(path),false,path);
   for(const path of ['/','/admin','/api/health','/api/reservations'])assert.equal(isPublicPath(path),true,path);
+});
+
+
+test('personnel shifts require a session and retain Operations and Administrator access',async()=>{
+  for(const method of ['GET','POST','PATCH','DELETE']){
+    assert.equal((await request('/api/work-shifts',null,method)).status,401);
+    for(const role of ['administrador','jefe_operaciones']){
+      assert.equal((await request('/api/work-shifts',role,method)).status,200);
+    }
+  }
 });
