@@ -118,3 +118,12 @@ test('personnel shifts require a session and retain Operations and Administrator
     }
   }
 });
+
+
+test('SMTP configuration and test sending retain central administration permissions',async()=>{
+  for(const method of ['GET','PUT','POST']){
+    assert.equal((await request('/api/smtp-settings',null,method)).status,401);
+    for(const role of ['administrador','jefe_operaciones'])assert.equal((await request('/api/smtp-settings',role,method)).status,200);
+    for(const role of ['jefe_produccion','productor','operador','editor','produccion','visor'])assert.equal((await request('/api/smtp-settings',role,method)).status,403);
+  }
+});

@@ -75,3 +75,8 @@ __pycache__/
 
 # Local patch reference; excluded from source and deployment
 /PARCHE_TURNOS_PERSONAL_2026-11-17/
+
+# Workspace-local dependency caches and Python environment
+/.npm-cache/
+/.pip-cache/
+/.smtp-venv/

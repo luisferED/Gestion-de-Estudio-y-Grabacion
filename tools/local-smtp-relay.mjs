@@ -1,14 +1,11 @@
 import http from "node:http";
 import net from "node:net";
 import tls from "node:tls";
-import { spawn } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import {sendNtlmMail} from "./smtp-ntlm.mjs";
 
 const PORT = Number(process.env.LOCAL_SMTP_RELAY_PORT || 3127);
 const HOST = "127.0.0.1";
 const MAX_BODY = 1024 * 1024;
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const cleanHeader = (value = "") => String(value).replace(/[\r\n]+/g, " ").trim();
 const base64 = (value = "") => Buffer.from(String(value), "utf8").toString("base64");
@@ -31,27 +28,6 @@ function connection(host, port, secure, rejectUnauthorized) {
       socket.setTimeout(15000, () => socket.destroy(new Error("Tiempo de espera agotado.")));
       resolve(socket);
     });
-  });
-}
-
-function sendWithWindowsExchange(config, message) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(ROOT, "tools", "send-smtp-exchange.ps1")],
-      { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let output = "";
-    let errors = "";
-    child.stdout.on("data", chunk => { output += chunk.toString("utf8"); });
-    child.stderr.on("data", chunk => { errors += chunk.toString("utf8"); });
-    child.on("error", error => reject(smtpError("No se pudo iniciar el autenticador de Windows", error)));
-    child.on("exit", code => {
-      if (code === 0 && output.includes('"ok":true')) resolve();
-      else reject(new Error(`Exchange rechazó la autenticación NTLM o el envío: ${errors.trim() || output.trim() || `código ${code}`}`));
-    });
-    const encodedPayload = Buffer.from(JSON.stringify({ config, message }), "utf8").toString("base64");
-    child.stdin.end(encodedPayload);
   });
 }
 
@@ -83,18 +59,19 @@ function replyReader(socket) {
   return expected => new Promise((resolve, reject) => pending.push({ expected, resolve, reject }));
 }
 
-async function sendMail(config, message) {
+export async function sendMail(config, message) {
   const host = String(config.host || "").trim();
   const port = Number(config.port);
   const security = String(config.security || "starttls");
   const rejectUnauthorized = true;
   if(config.authMode==="login" && security==="none") throw new Error("AUTH LOGIN requiere TLS.");
-  if(!["none","login"].includes(config.authMode)) throw new Error("NTLM/Kerberos/OAuth2 requieren una adaptaci?n adicional en Linux.");
+  if(!["none","login","ntlm"].includes(config.authMode)) throw new Error("Método de autenticación SMTP no válido.");
+  if(!["none","starttls","ssl"].includes(security)) throw new Error("Seguridad SMTP no válida.");
   if (!host) throw new Error("Falta el servidor SMTP.");
   if (!Number.isInteger(port)) throw new Error("El puerto SMTP no es válido.");
   if (!message?.to?.length) throw new Error("No hay destinatarios.");
-  if (process.platform === "win32" && config.authMode === "login" && security !== "ssl") {
-    await sendWithWindowsExchange(config, message);
+  if (config.authMode === "ntlm") {
+    await sendNtlmMail(config, message);
     return;
   }
 
@@ -195,7 +172,7 @@ const server = http.createServer((request, response) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
+if (process.env.ED_SMTP_TEST_IMPORT !== "true") server.listen(PORT, HOST, () => {
   console.log(`[SMTP local] Relay listo en http://${HOST}:${PORT}`);
 });
 
