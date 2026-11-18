@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+RUN npm run check:fixed:source
 RUN npm run check:smtp:files && npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
@@ -20,6 +21,7 @@ RUN mkdir -p /data/state /data/backups && chown -R node:node /data
 USER node
 # Validate the final artifact as its runtime user; no SMTP or database access.
 RUN npm run check:smtp
+RUN npm run check:fixed
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 D1_STATE_DIR=/data/state LOCAL_AUTH_BYPASS=false WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 CMD ["node","tools/healthcheck.mjs"]

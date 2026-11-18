@@ -45,6 +45,18 @@ PARCHE_TURNOS_PERSONAL_2026-11-17
 .pip-cache
 .smtp-venv
 
+# Fixed schedule source, migration and runtime helper
+!lib/
+!lib/fixed-schedule.ts
+!tools/fixed_override_migration.py
+!tools/check-fixed-package.mjs
+!tools/migrations-approved.json
+!drizzle/
+!drizzle/0023_fixed_schedule_overrides.sql
+!drizzle/meta/
+!drizzle/meta/0023_snapshot.json
+!drizzle/meta/_journal.json
+
 # Required SMTP runtime: keep this block last. Build preflight validates the context.
 !tools/
 !tools/check-smtp-package.mjs

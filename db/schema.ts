@@ -36,6 +36,7 @@ export const reservations = sqliteTable("reservations", {
   approvalBy: text("approval_by").notNull().default(""),
   approvalAt: text("approval_at"),
   denialReason: text("denial_reason").notNull().default(""),
+  fixedOverride: integer("fixed_override", {mode:"boolean"}).notNull().default(false),
   soundSetPeople: integer("sound_set_people").notNull().default(0),
   soundMicrophones: integer("sound_microphones").notNull().default(0),
   soundInstrumentLines: integer("sound_instrument_lines").notNull().default(0),

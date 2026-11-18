@@ -4,6 +4,7 @@ import { getDb } from "../../../db";
 import { auditLogs, editingStaff, reservations, scheduleBlocks, smtpSettings, users } from "../../../db/schema";
 import { assignOperators, requiresManualAssignment } from "../../../lib/operator-roster";
 import { sendSmtpMail } from "../../../lib/smtp";
+import { canOverwriteFixed, fixedBlocksForBooking, fixedOverrideKey } from "../../../lib/fixed-schedule";
 
 const FIXED = [
   { start: "08:00", end: "09:00", title: "Preparación Para Ellas", program: "Para Ellas", color: "#E9A2B5", kind: "preparación" },
@@ -46,7 +47,6 @@ function minutes(value: string) {
 }
 const normalized=(value:unknown)=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toUpperCase();
 const isSoundsProgram=(value:unknown)=>normalized(value)==="SONIDOS DE LA REDACCION";
-const addMinutes=(value:string,amount:number)=>{const total=minutes(value)+amount;return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`};
 const blocksCalendar=(status:string)=>!["cancelada","denegada"].includes(status);
 const recordingBuffer=(usageCategory:unknown)=>normalized(usageCategory||"GRABACION")==="GRABACION"?15:0;
 // La agenda se opera en Bolivia (UTC-4). Una baja o reprogramación hecha desde
@@ -59,7 +59,7 @@ const countsAsStoppedTime=(date:string,startTime:string)=>{
 const privilegedReservationRoles=["administrador","jefe_operaciones","jefe_produccion","productor"];
 const operationalAssignmentRoles=["administrador","jefe_operaciones","productor"];
 
-function validate(payload: Record<string, unknown>) {
+function validate(payload: Record<string, unknown>, allowFixedWindow=false) {
   const required = ["title", "program", "locationType", "date", "startTime", "endTime", "requester", "requesterEmail"];
   for (const field of required) if (!String(payload[field] ?? "").trim()) return `Falta completar: ${field}`;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date))||Number.isNaN(Date.parse(String(payload.date))))return "Fecha no valida.";
@@ -74,7 +74,7 @@ function validate(payload: Record<string, unknown>) {
   // viernes; aplicar esa regla el fin de semana impedÃ­a reservas vÃ¡lidas.
   const bookingDay=new Date(`${String(payload.date)}T12:00:00`).getDay();
   const isWeekday=bookingDay>=1&&bookingDay<=5;
-  if(payload.locationType==="estudio"&&isWeekday){
+  if(payload.locationType==="estudio"&&isWeekday&&!allowFixedWindow){
     const startMin=minutes(start),endMin=minutes(end); // franja protegida 11:00 (660) – 12:30 (750): solo reservable dentro de 11:00–12:00 (720)
     if(startMin<750&&endMin>660&&(startMin<660||endMin>720))return "Estudio II: en la franja de 11:00 a 12:30 solo se puede reservar de 11:00 a 12:00.";
   }
@@ -87,9 +87,20 @@ function validate(payload: Record<string, unknown>) {
   }
   return null;
 }
-async function fixedConflict(payload:Record<string,unknown>){const resource=String(payload.locationType);if(resource==="exteriores")return null;const day=new Date(`${payload.date}T12:00:00`).getDay();const rows=await getDb().select().from(scheduleBlocks).where(and(eq(scheduleBlocks.active,true),eq(scheduleBlocks.resource,resource)));const source=rows.length?rows.filter(r=>r.weekdays.split(",").includes(String(day))).map(r=>({title:r.title,start:r.startTime,end:addMinutes(r.endTime,normalized(r.kind).includes("GRABACION")?15:0),scheduledEnd:r.endTime})):[];return source.find(i=>minutes(String(payload.startTime))<minutes(i.end)&&minutes(String(payload.endTime))>minutes(i.start))||null}
+async function fixedConflicts(payload:Record<string,unknown>){
+  if(payload.locationType==="exteriores")return [];
+  const rows=await getDb().select().from(scheduleBlocks).where(and(eq(scheduleBlocks.active,true),eq(scheduleBlocks.resource,String(payload.locationType))));
+  return fixedBlocksForBooking(rows,{date:String(payload.date),locationType:String(payload.locationType),startTime:String(payload.startTime),endTime:String(payload.endTime),usageCategory:String(payload.usageCategory||"grabacion")});
+}
 async function reservationConflict(payload:Record<string,unknown>,excludeId=0){const rows=await getDb().select().from(reservations).where(and(eq(reservations.date,String(payload.date)),eq(reservations.locationType,String(payload.locationType))));const start=minutes(String(payload.startTime)),end=minutes(String(payload.endTime))+recordingBuffer(payload.usageCategory);return rows.find(row=>row.id!==excludeId&&blocksCalendar(row.status)&&start<minutes(row.endTime)+recordingBuffer(row.usageCategory)&&end>minutes(row.startTime))||null}
-function fixedConflictResponse(clash:{title:string;start:string;end:string}){return Response.json({error:`La grabación se solapará con “${clash.title}” (${clash.start}–${clash.end}) de la grilla fija. Puede registrarla con la advertencia; quedará pendiente hasta que Jefe de Producción la apruebe.`,code:"FIXED_OVERLAP_CONFIRMATION_REQUIRED",override:clash},{status:409})}
+function fixedOverrideIssue(payload:Record<string,unknown>,clashes:Awaited<ReturnType<typeof fixedConflicts>>,role:string){
+  if(!clashes.length)return null;
+  if(!canOverwriteFixed(role))return Response.json({error:"Solo Administrador o Jefe de Produccion puede sobrescribir la grilla fija."},{status:403});
+  const key=fixedOverrideKey({date:String(payload.date),locationType:String(payload.locationType),startTime:String(payload.startTime),endTime:String(payload.endTime),usageCategory:String(payload.usageCategory||"grabacion")},clashes);
+  if(payload.allowFixedOverride===true&&payload.fixedOverrideKey===key)return null;
+  return Response.json({error:`Se sobrescribiran estos programas solo para esta fecha: ${clashes.map(c=>`${c.program || c.title}: ${c.title} (${c.startTime}-${c.endTime})`).join("; ")}. Confirme explicitamente la operacion.`,code:"FIXED_OVERRIDE_CONFIRMATION_REQUIRED",overrides:clashes,overrideKey:key},{status:409});
+}
+
 
 async function notify(payload: Record<string, unknown>, id: number, options:{recipients?:string[];kind?:"reservation"|"cancellation"|"denial"}={}) {
   const kind=options.kind||(String(payload.title).startsWith("CANCELACIÓN:")?"cancellation":"reservation"),isCancellation=kind==="cancellation",isDenial=kind==="denial";
@@ -136,21 +147,24 @@ export async function POST(request: Request) {
   try {
     
     const payload = await request.json() as Record<string, unknown>;
-    const issue = validate(payload);
+    const issue = validate(payload,true);
     if (issue) return Response.json({ error: issue }, { status: 400 });
+    payload.usageCategory=payload.locationType==="estudio"?(isTalentArea(payload.requestingArea)?"actividades internas":String(payload.usageCategory||"grabaci\u00f3n")):"grabaci\u00f3n";
     const actor=await activeActor(String(request.headers.get("x-ed-user-email")||""));
     if(!actor)return Response.json({error:"No se pudo identificar al usuario que registra la solicitud."},{status:403});
     if(!privilegedReservationRoles.includes(actor.role)){payload.requesterEmail=actor.email;payload.requester=actor.name;}
-    const fixedClash=await fixedConflict(payload);if(fixedClash&&payload.allowFixedOverride!==true)return fixedConflictResponse(fixedClash)
+    const fixedClashes=await fixedConflicts(payload);
+    const windowIssue=validate(payload,canOverwriteFixed(actor.role)&&fixedClashes.length>0);if(windowIssue)return Response.json({error:windowIssue},{status:400});
+    const overrideIssue=fixedOverrideIssue(payload,fixedClashes,actor.role);if(overrideIssue)return overrideIssue;
     const db = getDb();
     const activeExisting=await reservationConflict(payload);
     if (activeExisting) return Response.json({ error: `Horario no disponible: coincide con “${activeExisting.title}” (${activeExisting.startTime}–${activeExisting.endTime}) e incluye 15 minutos operativos posteriores.` }, { status: 409 });
     const talentRequest=isTalentArea(payload.requestingArea),requestedRoles=talentRequest?[]:String(payload.crewDetail||"").split(",").map(v=>v.trim()).filter(Boolean),assignedOperators=talentRequest?[]:await assignOperators(String(payload.date),String(payload.locationType),String(payload.program),String(payload.startTime),String(payload.endTime),requestedRoles);
     if(talentRequest&&payload.locationType==="estudio")payload.usageCategory="actividades internas";
     const [saved] = await db.insert(reservations).values({
-      title: String(payload.program), program: String(payload.program), requestingArea:String(payload.requestingArea||"PRODUCCIÓN"), locationType: String(payload.locationType), usageCategory:payload.locationType==="estudio"?String(payload.usageCategory||"grabación"):"grabación", locationDetail: payload.locationType==="exteriores"?String(payload.locationDetail ?? ""):"", date: String(payload.date), startTime: String(payload.startTime), endTime: String(payload.endTime), requester: String(payload.requester), requesterEmail: String(payload.requesterEmail), requesterPhone: String(payload.requesterPhone ?? ""), crew: requestedRoles.length, crewDetail: requestedRoles.join(", "), assignedOperators:JSON.stringify(assignedOperators), equipment: talentRequest?"":payload.locationType==="exteriores"?genericEquipment(payload.equipment):"", requirements: String(payload.requirements ?? ""), notes: String(payload.notes ?? ""), color: String(payload.color ?? "#4976BA"),status:"pendiente",soundSetPeople:isSoundsProgram(payload.program)?Number(payload.soundSetPeople):0,soundMicrophones:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundMicrophones):0,soundInstrumentLines:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundInstrumentLines):0,soundOwnSystem:isSoundsProgram(payload.program)&&Boolean(payload.soundOwnSystem),editingRequests:JSON.stringify(payload.locationType==="exteriores"?[]:editingRoles(payload.editingRoles)),assignedEditingStaff:"[]",
+      title: String(payload.program), program: String(payload.program), requestingArea:String(payload.requestingArea||"PRODUCCIÓN"), locationType: String(payload.locationType), usageCategory:payload.locationType==="estudio"?String(payload.usageCategory||"grabación"):"grabación", locationDetail: payload.locationType==="exteriores"?String(payload.locationDetail ?? ""):"", date: String(payload.date), startTime: String(payload.startTime), endTime: String(payload.endTime), requester: String(payload.requester), requesterEmail: String(payload.requesterEmail), requesterPhone: String(payload.requesterPhone ?? ""), crew: requestedRoles.length, crewDetail: requestedRoles.join(", "), assignedOperators:JSON.stringify(assignedOperators), equipment: talentRequest?"":payload.locationType==="exteriores"?genericEquipment(payload.equipment):"", requirements: String(payload.requirements ?? ""), notes: String(payload.notes ?? ""), color: String(payload.color ?? "#4976BA"),status:fixedClashes.length?"aprobada":"pendiente",fixedOverride:fixedClashes.length>0,approvalBy:fixedClashes.length?actor.email:"",approvalAt:fixedClashes.length?new Date().toISOString():null,soundSetPeople:isSoundsProgram(payload.program)?Number(payload.soundSetPeople):0,soundMicrophones:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundMicrophones):0,soundInstrumentLines:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundInstrumentLines):0,soundOwnSystem:isSoundsProgram(payload.program)&&Boolean(payload.soundOwnSystem),editingRequests:JSON.stringify(payload.locationType==="exteriores"?[]:editingRoles(payload.editingRoles)),assignedEditingStaff:"[]",
     }).returning();
-    await db.insert(auditLogs).values({reservationId:saved.id,action:"creación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({estado:{after:"pendiente"},horario:{after:{date:saved.date,startTime:saved.startTime,endTime:saved.endTime,resource:saved.locationType}},programa:{after:saved.program},...(fixedClash?{solapamientoGrillaFija:{after:fixedClash}}:{})})});
+    await db.insert(auditLogs).values({reservationId:saved.id,action:fixedClashes.length?"creación con sobrescritura de grilla":"creación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({estado:{after:saved.status},horario:{after:{date:saved.date,startTime:saved.startTime,endTime:saved.endTime,resource:saved.locationType}},programa:{after:saved.program},...(fixedClashes.length?{sobrescrituraGrillaFija:{after:fixedClashes}}:{})})});
     let emailStatus = "pendiente_configuracion",emailError="";
     const assignedOperatorsText=assignedOperators.map(a=>`${a.role}: ${a.name} (${a.startTime}–${a.endTime})`).join("; ");
     try { emailStatus = await notify({...payload,equipment:saved.equipment,crewDetail:saved.crewDetail,assignedOperatorsText}, saved.id); } catch(error) { emailStatus = "error";emailError=error instanceof Error?error.message:"No se pudo enviar el correo."; }
@@ -172,10 +186,12 @@ export async function PATCH(request: Request) {
       const [before]=await db.select().from(reservations).where(eq(reservations.id,id)).limit(1);if(!before)return Response.json({error:"Solicitud inexistente."},{status:404});
       if(["cancelada","completada"].includes(before.status))return Response.json({error:"Esta solicitud ya no puede ser revisada."},{status:409});
       const approved=payload.action==="approve",reason=String(payload.reason||"").trim();if(!approved&&reason.length<3)return Response.json({error:"Indique el motivo de la denegación."},{status:400});
-      const fixedClash=approved?await fixedConflict({locationType:before.locationType,date:before.date,startTime:before.startTime,endTime:before.endTime}):null;
-      if(fixedClash&&!["jefe_produccion","administrador"].includes(actor.role))return Response.json({error:`Esta solicitud se solapa con “${fixedClash.title}”. Debe ser aprobada por Jefe de Producción.`},{status:403});
-      const status=approved?"aprobada":"denegada",[saved]=await db.update(reservations).set({status,approvalBy:actor.email,approvalAt:new Date().toISOString(),denialReason:approved?"":reason}).where(eq(reservations.id,id)).returning();
-      await db.insert(auditLogs).values({reservationId:id,action:approved?"aprobación":"denegación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({status:{before:before.status,after:status},motivo:{after:approved?"Aprobada por Jefatura de Producción":reason},...(fixedClash?{solapamientoGrillaFija:{after:fixedClash}}:{})})});
+      const approvalPayload={...before,allowFixedOverride:payload.allowFixedOverride,fixedOverrideKey:payload.fixedOverrideKey};
+      const fixedClashes=approved?await fixedConflicts(approvalPayload):[];
+      const overrideIssue=approved?fixedOverrideIssue(approvalPayload,fixedClashes,actor.role):null;if(overrideIssue)return overrideIssue;
+      if(approved){const conflict=await reservationConflict(before,id);if(conflict)return Response.json({error:"Horario no disponible: conflicto con otra reserva, incluidos los 15 minutos operativos."},{status:409});}
+      const status=approved?"aprobada":"denegada",[saved]=await db.update(reservations).set({status,approvalBy:actor.email,approvalAt:new Date().toISOString(),denialReason:approved?"":reason,fixedOverride:approved&&fixedClashes.length>0}).where(eq(reservations.id,id)).returning();
+      await db.insert(auditLogs).values({reservationId:id,action:approved&&fixedClashes.length?"aprobación con sobrescritura de grilla":approved?"aprobación":"denegación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({status:{before:before.status,after:status},fixedOverride:{before:before.fixedOverride,after:approved&&fixedClashes.length>0},motivo:{after:approved?"Aprobada por Jefatura de Producción":reason},...(fixedClashes.length?{sobrescrituraGrillaFija:{after:fixedClashes}}:{})})});
       let emailStatus="no_aplica",emailError="";
       if(!approved)try{emailStatus=await notify({...before,title:`RECHAZADA: ${before.title}`,notes:reason},before.id,{kind:"denial",recipients:[before.requesterEmail]})}catch(error){emailStatus="error";emailError=error instanceof Error?error.message:"No se pudo enviar el correo de rechazo."}
       return Response.json({reservation:{...saved,assignedOperators:JSON.parse(saved.assignedOperators||"[]")},emailStatus,emailError});
@@ -192,9 +208,10 @@ export async function PATCH(request: Request) {
       await db.insert(auditLogs).values({reservationId:id,action:"asignación de edición",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({personalEdicion:{before:parseEditing(before.assignedEditingStaff),after:cleaned}})});
       return Response.json({reservation:{...saved,assignedOperators:JSON.parse(saved.assignedOperators||"[]"),editingRequests:requested,assignedEditingStaff:cleaned}});
     }
-    const issue = validate(payload);
+    const issue = validate(payload,true);
     if (issue) return Response.json({ error: issue }, { status: 400 });
-    const fixedClash=await fixedConflict(payload);if(fixedClash&&payload.allowFixedOverride!==true)return fixedConflictResponse(fixedClash)
+    payload.usageCategory=payload.locationType==="estudio"?(isTalentArea(payload.requestingArea)?"actividades internas":String(payload.usageCategory||"grabaci\u00f3n")):"grabaci\u00f3n";
+
     const actorEmail = String(request.headers.get("x-ed-user-email")||payload.actorEmail || "").trim().toLowerCase();
     const db = getDb();
     const [actor] = await db.select().from(users).where(and(eq(users.email, actorEmail), eq(users.active, true))).limit(1);
@@ -203,6 +220,9 @@ export async function PATCH(request: Request) {
     if (!before) return Response.json({ error: "La solicitud ya no existe." }, { status: 404 });
     if(!privilegedReservationRoles.includes(actor.role)&&actor.email!==before.requesterEmail)return Response.json({error:"Solo el solicitante o un Productor puede modificar esta solicitud."},{status:403});
     if(!privilegedReservationRoles.includes(actor.role)){payload.requesterEmail=before.requesterEmail;payload.requester=before.requester;}
+    const fixedClashes=await fixedConflicts(payload);
+    const windowIssue=validate(payload,canOverwriteFixed(actor.role)&&fixedClashes.length>0);if(windowIssue)return Response.json({error:windowIssue},{status:400});
+    const overrideIssue=fixedOverrideIssue(payload,fixedClashes,actor.role);if(overrideIssue)return overrideIssue;
     const conflict=await reservationConflict(payload,id);
     if (conflict) return Response.json({ error: `Horario no disponible: coincide con “${conflict.title}” (${conflict.startTime}–${conflict.endTime}) e incluye 15 minutos operativos posteriores.` }, { status: 409 });
     const dateChanged=before.date!==String(payload.date),timeChanged=before.startTime!==String(payload.startTime)||before.endTime!==String(payload.endTime),scheduleChanged=dateChanged||timeChanged,reason=String(payload.rescheduleReason||""),detail=String(payload.rescheduleDetail||"");
@@ -213,14 +233,14 @@ export async function PATCH(request: Request) {
     const manual=requiresManualAssignment(String(payload.date),String(payload.locationType));
     const assignedOperators=talentRequest?[]:manual?(canManageOperations?manualAssignments.filter(a=>a.name?.trim()&&requestedRoles.includes(a.role)).map(a=>({...a,name:a.name.trim().toUpperCase(),startTime:String(payload.startTime),endTime:String(payload.endTime)})):(JSON.parse(before.assignedOperators||"[]") as {name:string;role:string;startTime:string;endTime:string}[]).filter(a=>requestedRoles.includes(a.role)).map(a=>({...a,startTime:String(payload.startTime),endTime:String(payload.endTime)}))):await assignOperators(String(payload.date),String(payload.locationType),String(payload.program),String(payload.startTime),String(payload.endTime),requestedRoles);
     const nextEditingRequests=payload.locationType==="exteriores"?[]:editingRoles(payload.editingRoles);
-    const values = { title:String(payload.program), program:String(payload.program), requestingArea:String(payload.requestingArea||"PRODUCCIÓN"), locationType:String(payload.locationType), usageCategory:payload.locationType==="estudio"?String(payload.usageCategory||"grabación"):"grabación", locationDetail:payload.locationType==="exteriores"?String(payload.locationDetail||""):"", date:String(payload.date), startTime:String(payload.startTime), endTime:String(payload.endTime), requester:String(payload.requester), requesterEmail:String(payload.requesterEmail), requesterPhone:String(payload.requesterPhone||""), crew:requestedRoles.length, crewDetail:requestedRoles.join(", "), assignedOperators:JSON.stringify(assignedOperators), equipment:talentRequest?"":payload.locationType==="exteriores"?genericEquipment(payload.equipment):"", requirements:String(payload.requirements||""), notes:String(payload.notes||""), color:String(payload.color||"#4976BA"),status:"pendiente",approvalBy:"",approvalAt:null,denialReason:"",soundSetPeople:isSoundsProgram(payload.program)?Number(payload.soundSetPeople):0,soundMicrophones:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundMicrophones):0,soundInstrumentLines:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundInstrumentLines):0,soundOwnSystem:isSoundsProgram(payload.program)&&Boolean(payload.soundOwnSystem),editingRequests:JSON.stringify(nextEditingRequests),assignedEditingStaff:JSON.stringify(parseEditing(before.assignedEditingStaff).filter(item=>nextEditingRequests.includes(normalized(item.role)))),...(scheduleChanged?{rescheduleReason:reason,rescheduleDetail:detail}:{}) };
+    const values = { title:String(payload.program), program:String(payload.program), requestingArea:String(payload.requestingArea||"PRODUCCIÓN"), locationType:String(payload.locationType), usageCategory:payload.locationType==="estudio"?String(payload.usageCategory||"grabación"):"grabación", locationDetail:payload.locationType==="exteriores"?String(payload.locationDetail||""):"", date:String(payload.date), startTime:String(payload.startTime), endTime:String(payload.endTime), requester:String(payload.requester), requesterEmail:String(payload.requesterEmail), requesterPhone:String(payload.requesterPhone||""), crew:requestedRoles.length, crewDetail:requestedRoles.join(", "), assignedOperators:JSON.stringify(assignedOperators), equipment:talentRequest?"":payload.locationType==="exteriores"?genericEquipment(payload.equipment):"", requirements:String(payload.requirements||""), notes:String(payload.notes||""), color:String(payload.color||"#4976BA"),status:fixedClashes.length?"aprobada":"pendiente",approvalBy:fixedClashes.length?actor.email:"",approvalAt:fixedClashes.length?new Date().toISOString():null,denialReason:"",fixedOverride:fixedClashes.length>0,soundSetPeople:isSoundsProgram(payload.program)?Number(payload.soundSetPeople):0,soundMicrophones:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundMicrophones):0,soundInstrumentLines:isSoundsProgram(payload.program)&&!payload.soundOwnSystem?Number(payload.soundInstrumentLines):0,soundOwnSystem:isSoundsProgram(payload.program)&&Boolean(payload.soundOwnSystem),editingRequests:JSON.stringify(nextEditingRequests),assignedEditingStaff:JSON.stringify(parseEditing(before.assignedEditingStaff).filter(item=>nextEditingRequests.includes(normalized(item.role)))),...(scheduleChanged?{rescheduleReason:reason,rescheduleDetail:detail}:{}) };
     const changes: Record<string,{before:unknown;after:unknown}> = {};
     for (const [key,value] of Object.entries(values)) if (String(before[key as keyof typeof before] ?? "") !== String(value ?? "")) changes[key] = { before: before[key as keyof typeof before], after: value };
     const [saved] = await db.update(reservations).set(values).where(eq(reservations.id,id)).returning();
     const stoppedTime=scheduleChanged&&countsAsStoppedTime(before.date,before.startTime);
     if(scheduleChanged){changes.horarioOriginal={before:null,after:{date:before.date,startTime:before.startTime,endTime:before.endTime,resource:before.locationType,program:before.program,requester:before.requester,requesterEmail:before.requesterEmail}};changes.horasParadas={before:null,after:stoppedTime};}
-    if(fixedClash)changes.solapamientoGrillaFija={before:null,after:fixedClash};
-    await db.insert(auditLogs).values({ reservationId:id, action:scheduleChanged?"reprogramación":"edición", actorEmail:actor.email, actorName:actor.name, changes:JSON.stringify(changes) });
+    if(fixedClashes.length)changes.sobrescrituraGrillaFija={before:null,after:fixedClashes};
+    await db.insert(auditLogs).values({ reservationId:id, action:fixedClashes.length?"sobrescritura de grilla":scheduleChanged?"reprogramación":"edición", actorEmail:actor.email, actorName:actor.name, changes:JSON.stringify(changes) });
     return Response.json({ reservation:{...saved,assignedOperators} });
   } catch(error) { return Response.json({ error:error instanceof Error?error.message:"No se pudo editar la solicitud." },{status:error instanceof Error&&error.message.includes("RESERVATION_TIME_CONFLICT")?409:500}); }
 }
@@ -228,7 +248,7 @@ export async function PATCH(request: Request) {
 async function activeActor(email:string){return (await getDb().select().from(users).where(and(eq(users.email,email.trim().toLowerCase()),eq(users.active,true))).limit(1))[0]}
 
 export async function DELETE(request:Request){
-  try{const p=await request.json() as {id:number;actorEmail:string;reason:string;detail:string};if(!validReason(p.reason||"",p.detail||""))return Response.json({error:"Seleccione el motivo de cancelación. Si elige Otro, debe especificarlo."},{status:400});const db=getDb(),actor=await activeActor(String(request.headers.get("x-ed-user-email")||p.actorEmail||""));if(!actor)return Response.json({error:"Seleccione un usuario corporativo activo."},{status:403});const [before]=await db.select().from(reservations).where(eq(reservations.id,p.id)).limit(1);if(!before)return Response.json({error:"Solicitud inexistente."},{status:404});if(!privilegedReservationRoles.includes(actor.role)&&actor.email!==before.requesterEmail)return Response.json({error:"Solo el solicitante o un Productor puede cancelar esta solicitud."},{status:403});const stoppedTime=countsAsStoppedTime(before.date,before.startTime),sameDay=before.date===boliviaNow().toISOString().slice(0,10);const [saved]=await db.update(reservations).set({status:"cancelada",cancelledAt:sql`CURRENT_TIMESTAMP`,cancellationReason:p.reason,cancellationDetail:p.detail||"",sameDayCancellation:sameDay}).where(eq(reservations.id,p.id)).returning();await db.insert(auditLogs).values({reservationId:p.id,action:"cancelación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({status:{before:before.status,after:"cancelada"},motivo:{after:p.reason},detalle:{after:p.detail||""},cancelacionMismoDia:{after:sameDay},horarioAfectado:{after:{date:before.date,startTime:before.startTime,endTime:before.endTime,resource:before.locationType,program:before.program,requester:before.requester,requesterEmail:before.requesterEmail}},horasParadas:{after:stoppedTime}})});let emailStatus="pendiente_configuracion";try{emailStatus=await notify({...before,title:`CANCELACIÓN: ${before.title}`,notes:`Motivo: ${p.reason}${p.detail?` · ${p.detail}`:""}`},before.id)}catch{emailStatus="error"}return Response.json({reservation:saved,emailStatus})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo cancelar."},{status:error instanceof Error&&error.message.includes("RESERVATION_TIME_CONFLICT")?409:500})}
+  try{const p=await request.json() as {id:number;actorEmail:string;reason:string;detail:string};if(!validReason(p.reason||"",p.detail||""))return Response.json({error:"Seleccione el motivo de cancelación. Si elige Otro, debe especificarlo."},{status:400});const db=getDb(),actor=await activeActor(String(request.headers.get("x-ed-user-email")||p.actorEmail||""));if(!actor)return Response.json({error:"Seleccione un usuario corporativo activo."},{status:403});const [before]=await db.select().from(reservations).where(eq(reservations.id,p.id)).limit(1);if(!before)return Response.json({error:"Solicitud inexistente."},{status:404});if(!privilegedReservationRoles.includes(actor.role)&&actor.email!==before.requesterEmail)return Response.json({error:"Solo el solicitante o un Productor puede cancelar esta solicitud."},{status:403});const stoppedTime=countsAsStoppedTime(before.date,before.startTime),sameDay=before.date===boliviaNow().toISOString().slice(0,10);const [saved]=await db.update(reservations).set({status:"cancelada",fixedOverride:false,cancelledAt:sql`CURRENT_TIMESTAMP`,cancellationReason:p.reason,cancellationDetail:p.detail||"",sameDayCancellation:sameDay}).where(eq(reservations.id,p.id)).returning();await db.insert(auditLogs).values({reservationId:p.id,action:"cancelación",actorEmail:actor.email,actorName:actor.name,changes:JSON.stringify({status:{before:before.status,after:"cancelada"},fixedOverride:{before:before.fixedOverride,after:false},motivo:{after:p.reason},detalle:{after:p.detail||""},cancelacionMismoDia:{after:sameDay},horarioAfectado:{after:{date:before.date,startTime:before.startTime,endTime:before.endTime,resource:before.locationType,program:before.program,requester:before.requester,requesterEmail:before.requesterEmail}},horasParadas:{after:stoppedTime}})});let emailStatus="pendiente_configuracion";try{emailStatus=await notify({...before,title:`CANCELACIÓN: ${before.title}`,notes:`Motivo: ${p.reason}${p.detail?` · ${p.detail}`:""}`},before.id)}catch{emailStatus="error"}return Response.json({reservation:saved,emailStatus})}catch(error){return Response.json({error:error instanceof Error?error.message:"No se pudo cancelar."},{status:error instanceof Error&&error.message.includes("RESERVATION_TIME_CONFLICT")?409:500})}
 }
 
 export async function PUT(request:Request){

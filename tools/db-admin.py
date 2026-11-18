@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse, hashlib, json, os, re, sqlite3, sys
+from fixed_override_migration import apply_migration_statement
 if os.name=="nt": import msvcrt
 else: import fcntl
 from pathlib import Path
@@ -93,7 +94,7 @@ else:
                 if current.strip() and not current.strip().startswith('--'): raise SystemExit('Incomplete SQL: '+file.name)
                 db.execute('BEGIN IMMEDIATE')
                 try:
-                    for statement in statements: db.execute(statement)
+                    for statement in statements: apply_migration_statement(db, file.name, statement)
                     db.execute('INSERT INTO ed_migrations(name,sha256) VALUES (?,?)',(file.name,digest))
                     db.commit()
                 except: db.rollback(); raise
